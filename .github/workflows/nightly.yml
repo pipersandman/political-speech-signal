@@ -1,0 +1,76 @@
+name: nightly-report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:00 UTC ≈ 20:00 PT (nightly)
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Minimal static site with a timestamp
+      - name: Generate site
+        run: |
+          mkdir -p site
+          ts="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <html>
+          <head>
+            <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Political Speech Signal</title>
+            <style>
+              body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;max-width:800px;margin:40px auto;padding:0 16px;line-height:1.5}
+              code{background:#f6f8fa;padding:2px 4px;border-radius:4px}
+            </style>
+          </head>
+          <body>
+            <h1>Political Speech Signal</h1>
+            <p>MVP smoke test. The pipeline is alive.</p>
+            <p>Generated: <span id="ts"></span></p>
+            <p>Next step in the waterfall: ingestion → NLP → charts.</p>
+            <footer><small>© 2025</small></footer>
+            <script>document.getElementById('ts').textContent = '%TS%';</script>
+          </body>
+          </html>
+          HTML
+          sed -i "s/%TS%/$ts/" site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Optional Telegram notify — only runs if both secrets exist
+      - name: Notify Telegram (optional)
+        if: ${{ secrets.TG_BOT_TOKEN != '' && secrets.TG_CHAT_ID != '' }}
+        run: |
+          text="📣 Nightly report published: ${{ steps.deployment.outputs.page_url }}"
+          curl -sS -X POST "https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TG_CHAT_ID }}" \
+            -d text="$text"
