@@ -62,7 +62,8 @@ jobs:
       - name: Build site (inventory + snapshot + NLP)
         run: python scripts/inventory_truth.py
 
-      - name: QA: check artifacts if present
+- name: "QA: check artifacts if present"
+
         run: |
           if [ -f scripts/check_artifacts.py ]; then
             python scripts/check_artifacts.py
