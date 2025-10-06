@@ -73,16 +73,18 @@ jobs:
           path: ${{ env.NLTK_DATA }}
           key: nltk-${{ runner.os }}-v1
 
-      - name: Install deps
+           - name: Install deps
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: |
-          pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9"
+          pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9" "spacy>=3.7"
+          python -m spacy download en_core_web_sm
           python - << 'PY'
           import os, nltk
-          nltk.data.path.append(os.environ['NLTK_DATA'])
-          nltk.download('vader_lexicon', download_dir=os.environ['NLTK_DATA'])
-          nltk.download('stopwords',     download_dir=os.environ['NLTK_DATA'])
+          nltk.data.path.append(os.environ.get('NLTK_DATA',''))
+          nltk.download('vader_lexicon', download_dir=os.environ.get('NLTK_DATA'))
+          nltk.download('stopwords',     download_dir=os.environ.get('NLTK_DATA'))
           PY
+
 
       - name: Normalize → snapshot.json
         if: ${{ steps.decide.outputs.ok == 'true' }}
