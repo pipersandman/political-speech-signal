@@ -105,22 +105,24 @@ def main():
             s = sent.text.strip()
             if not s:
                 continue
-            comp = SentimentIntensityAnalyzer().polarity_scores(s)["compound"]
-            feats = intensity_feats(s)
-            ents = [e for e in sent.ents if e.label_ in ALLOWED]
-            uniq = {(e.text, e.label_)} if ents else set()
-            for e in ents:
-                uniq.add((e.text, e.label_))
-            for etext, elab in uniq:
-                canon = canon_label(etext, elab)
-                group_counts[canon] += 1
-                group_sent_sum[canon] += comp
-                group_bucket[canon][tone_bucket(comp)] += 1
-                gi = group_intensity[canon]
-                gi["praise"] += feats["praise"]
-                gi["attack"] += feats["attack"]
-                gi["exclam"] += feats["exclam"]
-                gi["allcap"] += feats["allcap"]
+          comp = sia.polarity_scores(s)["compound"]  # reuse the global SIA
+feats = intensity_feats(s)
+
+# keep only group-like entities and dedupe them
+ents = [e for e in sent.ents if e.label_ in ALLOWED]
+uniq = {(e.text, e.label_) for e in ents}
+
+for etext, elab in uniq:
+    canon = canon_label(etext, elab)
+    group_counts[canon] += 1
+    group_sent_sum[canon] += comp
+    group_bucket[canon][tone_bucket(comp)] += 1
+    gi = group_intensity[canon]
+    gi["praise"] += feats["praise"]
+    gi["attack"] += feats["attack"]
+    gi["exclam"] += feats["exclam"]
+    gi["allcap"] += feats["allcap"]
+
 
     rows = []
     for g, c in group_counts.items():
