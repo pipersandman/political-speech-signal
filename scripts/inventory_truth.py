@@ -5,8 +5,9 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 TRUTH_REPO = os.getenv("TRUTH_REPO", "https://github.com/stiles/trump-truth-social-archive.git")
+CACHE_BUST = os.getenv("CACHE_BUST", "")
 
-def run(cmd: list[str], cwd: Path | None = None) -> str:
+def run(cmd, cwd=None):
     out = subprocess.check_output(cmd, cwd=str(cwd) if cwd else None)
     return out.decode("utf-8", "replace").strip()
 
@@ -24,32 +25,25 @@ def file_linecount(p: Path) -> int:
         return 0
 
 def main():
-    # where we’ll write the public site
     site = Path("site")
     site.mkdir(parents=True, exist_ok=True)
 
-    # 1) clone the source repo into a temp dir on the Actions runner
+    # Clone upstream for basic stats
     tmp = Path(tempfile.mkdtemp(prefix="truth_src_"))
     repo_dir = tmp / "truth"
     clone_repo(TRUTH_REPO, repo_dir)
 
-    # 2) basic metadata from git
     try:
         latest_commit_iso = run(["git", "log", "-1", "--format=%cI"], cwd=repo_dir)
     except Exception:
         latest_commit_iso = None
 
-    # 3) walk files and inventory likely data files
     data_root = repo_dir / "data"
     exts = {".jsonl", ".json", ".csv", ".tsv", ".ndjson"}
     files = []
-    if data_root.exists():
-        for p in data_root.rglob("*"):
-            if p.is_file() and p.suffix.lower() in exts:
-                files.append(p)
-    else:
-        # fallback: look everywhere
-        for p in repo_dir.rglob("*"):
+    roots = [data_root] if data_root.exists() else [repo_dir]
+    for root in roots:
+        for p in root.rglob("*"):
             if p.is_file() and p.suffix.lower() in exts:
                 files.append(p)
 
@@ -63,7 +57,15 @@ def main():
         if sz > largest_size:
             largest_size, largest = sz, p
 
-    # 4) produce a tiny inventory JSON (also shipped with the site)
+    # Optional: read snapshot.json (created by normalize step)
+    snap_path = site / "snapshot.json"
+    snap = None
+    if snap_path.exists():
+        try:
+            snap = json.loads(snap_path.read_text(encoding="utf-8"))
+        except Exception:
+            snap = None
+
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     inv = {
         "source_repo": TRUTH_REPO,
@@ -76,12 +78,26 @@ def main():
     }
     (site / "inventory.json").write_text(json.dumps(inv, indent=2), encoding="utf-8")
 
-    # 5) render a minimal index.html with the stats
+    # HTML
+    snap_section = ""
+    if snap:
+        snap_section = f"""
+  <div class="card">
+    <h3>Today’s normalized snapshot</h3>
+    <p>Total seen upstream: <b>{snap.get('total_seen')}</b> • Snapshot size: <b>{snap.get('snapshot_size')}</b></p>
+    <p>Time range: <code>{(snap.get('time_range') or {}).get('min')}</code> → <code>{(snap.get('time_range') or {}).get('max')}</code></p>
+    <p>Download: <a href="snapshot.json?v={CACHE_BUST}">snapshot.json</a></p>
+  </div>
+        """.strip()
+
     html = f"""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Political Speech Signal</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
 <style>
 body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;max-width:800px;margin:40px auto;padding:0 16px;line-height:1.5}}
 code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
@@ -92,6 +108,7 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
 <body>
   <h1>Political Speech Signal</h1>
   <p class="small">Generated: {now}</p>
+
   <div class="card">
     <h3>Source inventory</h3>
     <p>Upstream repo: <code>{TRUTH_REPO}</code></p>
@@ -99,14 +116,15 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
     <p>Data files discovered: <b>{n_files}</b></p>
     <p>Approx total lines: <b>{total_lines:,}</b></p>
     <p>Largest file: <code>{(largest.name if largest else "n/a")}</code> ({largest_size if largest_size>=0 else "n/a"} bytes)</p>
-    <p>Raw inventory JSON: <a href="inventory.json">inventory.json</a></p>
+    <p>Raw inventory JSON: <a href="inventory.json?v={CACHE_BUST}">inventory.json</a></p>
   </div>
-  <p>Next in the waterfall: define schema → normalize to Parquet → charts.</p>
+
+  {snap_section or ""}
+  <p>Next in the waterfall: define the precise schema and add Parquet outputs.</p>
   <footer><small>© 2025</small></footer>
 </body>
 </html>"""
     (site / "index.html").write_text(html, encoding="utf-8")
-
     print(f"[ok] wrote {site/'index.html'} and {site/'inventory.json'}")
     return 0
 
