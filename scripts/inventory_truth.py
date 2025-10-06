@@ -72,6 +72,12 @@ def main():
     if t_path.exists():
         try: trends = json.loads(t_path.read_text(encoding="utf-8"))
         except Exception: pass
+                ents = None
+    e_path = site / "entities.json"
+    if e_path.exists():
+        try: ents = json.loads(e_path.read_text(encoding="utf-8"))
+        except Exception: pass
+
 
     # HTML bits
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -122,7 +128,28 @@ def main():
     <p>Full NLP JSON: <a href="nlp.json?v={CACHE_BUST}">nlp.json</a></p>
   </div>"""
 
+    entities_section = ""
+    if ents:
+        def chips(items):
+            if not items: return "n/a"
+            parts = []
+            for it in items[:10]:
+                s = it.get("avg_sentiment", 0)
+                tone = "🙂" if s >= 0.2 else ("😐" if s > -0.2 else "☹️")
+                parts.append(f"<span style='display:inline-block;background:#f6f8fa;border:1px solid #eee;border-radius:12px;padding:2px 8px;margin:2px 4px'>{tone} {it['entity']} <small>×{it['count']}, {s:+.2f}</small></span>")
+            return " ".join(parts)
 
+        entities_section = f"""
+  <div class="card">
+    <h3>Entities (7-day window)</h3>
+    <p><b>People:</b><br>{chips(ents.get('top_persons', []))}</p>
+    <p><b>Orgs:</b><br>{chips(ents.get('top_orgs', []))}</p>
+    <p><b>Places/Geo:</b><br>{chips(ents.get('top_places', []))}</p>
+    <p><b>Groups (NORP):</b><br>{chips(ents.get('top_groups', []))}</p>
+    <p>Full entities JSON: <a href="entities.json?v={CACHE_BUST}">entities.json</a></p>
+  </div>"""
+
+    
     trends_section = ""
     if trends:
         trends_section = f"""
