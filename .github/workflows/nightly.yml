@@ -97,6 +97,10 @@ jobs:
       - name: NLP analysis → nlp.json
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/nlp_analyze.py
+        
+      - name: Entities → entities.json
+        if: ${{ steps.decide.outputs.ok == 'true' }}
+        run: python scripts/entities_extract.py
 
       - name: Build site (inventory + snapshot + NLP)
         if: ${{ steps.decide.outputs.ok == 'true' }}
