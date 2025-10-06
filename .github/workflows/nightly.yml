@@ -30,14 +30,23 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install deps for normalization
-        run: pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0"
+      - name: Install deps for normalization + NLP
+        run: |
+          pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9"
+          python - << 'PY'
+          import nltk
+          nltk.download('vader_lexicon')
+          nltk.download('stopwords')
+          PY
 
       - name: Normalize upstream → snapshot.json
         run: python scripts/normalize_truth.py
 
       - name: Normalize to Parquet (+ trends)
         run: python scripts/normalize_to_parquet.py
+
+      - name: NLP analysis → nlp.json
+        run: python scripts/nlp_analyze.py
 
       - name: Upload Parquet artifact (kept off-repo)
         uses: actions/upload-artifact@v4
@@ -46,7 +55,7 @@ jobs:
           path: data/processed/*.parquet
           retention-days: 7
 
-      - name: Build site (inventory + snapshot)
+      - name: Build site (inventory + snapshot + NLP)
         run: python scripts/inventory_truth.py
 
       - name: Upload Pages artifact
