@@ -30,8 +30,21 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Install deps for normalization
+        run: pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0"
+
       - name: Normalize upstream → snapshot.json
         run: python scripts/normalize_truth.py
+
+      - name: Normalize to Parquet (+ trends)
+        run: python scripts/normalize_to_parquet.py
+
+      - name: Upload Parquet artifact (kept off-repo)
+        uses: actions/upload-artifact@v4
+        with:
+          name: parquet-${{ github.run_id }}
+          path: data/processed/*.parquet
+          retention-days: 7
 
       - name: Build site (inventory + snapshot)
         run: python scripts/inventory_truth.py
@@ -40,6 +53,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
+
 
   deploy:
     needs: build
