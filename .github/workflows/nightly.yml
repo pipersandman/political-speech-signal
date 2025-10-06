@@ -101,6 +101,10 @@ jobs:
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/entities_extract.py
 
+      - name: Rhetoric toward groups → rhetoric.json
+        if: ${{ steps.decide.outputs.ok == 'true' }}
+        run: python scripts/rhetoric_tone.py
+
       - name: Build site (inventory + snapshot + NLP + entities)
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/inventory_truth.py
