@@ -1,9 +1,7 @@
-name: nightly-report
+name: build-and-deploy
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"  # 03:00 UTC ≈ 20:00 PT
 
 permissions:
   contents: read
@@ -23,11 +21,9 @@ jobs:
       SNAP_MAX: "200"
       NLTK_DATA: ${{ runner.temp }}/nltk_data
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
@@ -40,7 +36,7 @@ jobs:
           path: ${{ env.NLTK_DATA }}
           key: nltk-${{ runner.os }}-v1
 
-      - name: Install deps for normalization + NLP
+      - name: Install deps
         run: |
           pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9"
           python - << 'PY'
@@ -50,7 +46,7 @@ jobs:
           nltk.download('stopwords',     download_dir=os.environ['NLTK_DATA'])
           PY
 
-      - name: Normalize upstream → snapshot.json
+      - name: Normalize → snapshot.json
         run: python scripts/normalize_truth.py
 
       - name: Normalize to Parquet (+ trends)
@@ -61,15 +57,6 @@ jobs:
 
       - name: Build site (inventory + snapshot + NLP)
         run: python scripts/inventory_truth.py
-
-- name: "QA: check artifacts if present"
-
-        run: |
-          if [ -f scripts/check_artifacts.py ]; then
-            python scripts/check_artifacts.py
-          else
-            echo "check_artifacts.py not present, skipping QA"
-          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -82,18 +69,6 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
-
-      - name: Notify Telegram (optional)
-        if: ${{ env.TG_BOT_TOKEN != '' && env.TG_CHAT_ID != '' }}
-        run: |
-          text="📣 Inventory + snapshot + NLP published: ${{ steps.deployment.outputs.page_url }}"
-          curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d text="$text"
