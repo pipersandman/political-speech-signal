@@ -183,6 +183,30 @@ def main():
     <p>Full entities JSON: <a href="entities.json?v={CACHE_BUST}">entities.json</a></p>
   </div>"""
 
+    rhetoric_section = ""
+    if rhet:
+        def rchips(items):
+            if not items: return "n/a"
+            parts = []
+            for it in items[:8]:
+                s = it.get("avg_sentiment", 0.0)
+                tone = "🙂" if s >= 0.2 else ("😐" if s > -0.2 else "☹️")
+                parts.append(
+                    f"<span style='display:inline-block;background:#f6f8fa;border:1px solid #eee;"
+                    f"border-radius:12px;padding:2px 8px;margin:2px 4px'>{tone} {it['group']} "
+                    f"<small>×{it['mentions']}, {s:+.2f}</small></span>"
+                )
+            return ' '.join(parts)
+
+        rhetoric_section = f"""
+  <div class="card">
+    <h3>Rhetoric toward groups</h3>
+    <p><b>Most praised:</b><br>{rchips(rhet.get('top_praised', []))}</p>
+    <p><b>Most criticized:</b><br>{rchips(rhet.get('top_criticized', []))}</p>
+    <p>Full JSON: <a href="rhetoric.json?v={CACHE_BUST}">rhetoric.json</a></p>
+  </div>"""
+
+    
     trends_section = ""
     if trends:
         trends_section = f"""
