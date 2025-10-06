@@ -8,10 +8,10 @@ on:
         required: false
         type: boolean
   schedule:
-    # Noon PT (handles PST/PDT by bracketing UTC)
+    # Noon PT (cover PDT/PST with adjacent UTC hours)
     - cron: "0 19 * * *"
     - cron: "0 20 * * *"
-    # 10 PM PT (next-day UTC)
+    # 10 PM PT (next-day UTC; cover PDT/PST)
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
 
@@ -27,7 +27,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Expose a job-level output so other jobs can see the gate decision
     outputs:
       ok: ${{ steps.decide.outputs.ok }}
     env:
@@ -42,24 +41,24 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Decide if we should run (LA time or forced)
+      - name: Decide if we should run (LA time or manual)
         id: decide
         env:
           TZ: America/Los_Angeles
           FORCE_RUN: ${{ github.event.inputs.force }}
         run: |
-          if [ "${FORCE_RUN}" = "true" ]; then
-            echo "Force run requested via workflow_dispatch."
+          # Manual or forced runs bypass the gate
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "${FORCE_RUN}" = "true" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Scheduled: only at 12:00 or 22:00 LA time
           now_hour=$(date +%H)
-          echo "Local hour (America/Los_Angeles): $now_hour"
           if [ "$now_hour" = "12" ] || [ "$now_hour" = "22" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "Outside scheduled LA hours; build steps will be skipped."
+            echo "Outside scheduled LA hours; skipping build."
           fi
 
       - name: Prepare NLTK dir
@@ -73,18 +72,18 @@ jobs:
           path: ${{ env.NLTK_DATA }}
           key: nltk-${{ runner.os }}-v1
 
-           - name: Install deps
+      - name: Install deps
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: |
           pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9" "spacy>=3.7"
           python -m spacy download en_core_web_sm
           python - << 'PY'
           import os, nltk
-          nltk.data.path.append(os.environ.get('NLTK_DATA',''))
-          nltk.download('vader_lexicon', download_dir=os.environ.get('NLTK_DATA'))
-          nltk.download('stopwords',     download_dir=os.environ.get('NLTK_DATA'))
+          p = os.environ.get('NLTK_DATA','')
+          if p: nltk.data.path.append(p)
+          nltk.download('vader_lexicon', download_dir=p or None)
+          nltk.download('stopwords',     download_dir=p or None)
           PY
-
 
       - name: Normalize → snapshot.json
         if: ${{ steps.decide.outputs.ok == 'true' }}
@@ -97,12 +96,12 @@ jobs:
       - name: NLP analysis → nlp.json
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/nlp_analyze.py
-        
+
       - name: Entities → entities.json
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/entities_extract.py
 
-      - name: Build site (inventory + snapshot + NLP)
+      - name: Build site (inventory + snapshot + NLP + entities)
         if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/inventory_truth.py
 
@@ -114,7 +113,6 @@ jobs:
 
   deploy:
     needs: build
-    # Only deploy when the build actually produced the Pages artifact
     if: ${{ needs.build.outputs.ok == 'true' }}
     runs-on: ubuntu-latest
     environment:
