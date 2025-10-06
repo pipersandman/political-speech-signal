@@ -119,6 +119,8 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
     <p>Raw inventory JSON: <a href="inventory.json?v={CACHE_BUST}">inventory.json</a></p>
   </div>
 
+    <p>Trends (30d): <a href="trends.json?v={CACHE_BUST}">trends.json</a></p>
+
   {snap_section or ""}
   <p>Next in the waterfall: define the precise schema and add Parquet outputs.</p>
   <footer><small>© 2025</small></footer>
