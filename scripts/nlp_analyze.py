@@ -219,8 +219,11 @@ def main():
         }
     }
 
-    (SITE / "nlp.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[ok] wrote {SITE/'nlp.json'}")
+    (SITE / "nlp.json").write_text(
+    json.dumps(out, ensure_ascii=False, indent=2, default=str),
+    encoding="utf-8"
+)
+
 
 if __name__ == "__main__":
     sys.exit(main())
