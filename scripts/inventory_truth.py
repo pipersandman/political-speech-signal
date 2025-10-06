@@ -66,7 +66,24 @@ def main():
     n_path = site / "nlp.json"
     t_path = site / "trends.json"
     e_path = site / "entities.json"
+    rhet = None
+    r_path = site / "rhetoric.json"
 
+    if s_path.exists():
+        try: snap = json.loads(s_path.read_text(encoding="utf-8"))
+        except Exception: pass
+    if n_path.exists():
+        try: nlp = json.loads(n_path.read_text(encoding="utf-8"))
+        except Exception: pass
+    if t_path.exists():
+        try: trends = json.loads(t_path.read_text(encoding="utf-8"))
+        except Exception: pass
+    if e_path.exists():
+        try: ents = json.loads(e_path.read_text(encoding="utf-8"))
+        except Exception: pass
+    if r_path.exists():
+        try: rhet = json.loads(r_path.read_text(encoding="utf-8"))
+        except Exception: pass
     if s_path.exists():
         try: snap = json.loads(s_path.read_text(encoding="utf-8"))
         except Exception: pass
