@@ -25,10 +25,9 @@ def file_linecount(p: Path) -> int:
         return 0
 
 def main():
-    site = Path("site")
-    site.mkdir(parents=True, exist_ok=True)
+    site = Path("site"); site.mkdir(parents=True, exist_ok=True)
 
-    # Clone upstream for basic stats
+    # Clone upstream just for inventory stats
     tmp = Path(tempfile.mkdtemp(prefix="truth_src_"))
     repo_dir = tmp / "truth"
     clone_repo(TRUTH_REPO, repo_dir)
@@ -57,28 +56,26 @@ def main():
         if sz > largest_size:
             largest_size, largest = sz, p
 
-    # Optional: read snapshot.json (created by normalize step)
-    snap_path = site / "snapshot.json"
+    # Load snapshot/trends/NLP if present
     snap = None
-    if snap_path.exists():
-        try:
-            snap = json.loads(snap_path.read_text(encoding="utf-8"))
-        except Exception:
-            snap = None
+    nlp = None
+    trends = None
+    s_path = site / "snapshot.json"
+    n_path = site / "nlp.json"
+    t_path = site / "trends.json"
+    if s_path.exists():
+        try: snap = json.loads(s_path.read_text(encoding="utf-8"))
+        except Exception: pass
+    if n_path.exists():
+        try: nlp = json.loads(n_path.read_text(encoding="utf-8"))
+        except Exception: pass
+    if t_path.exists():
+        try: trends = json.loads(t_path.read_text(encoding="utf-8"))
+        except Exception: pass
 
+    # HTML bits
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    inv = {
-        "source_repo": TRUTH_REPO,
-        "generated_at_utc": now,
-        "latest_upstream_commit": latest_commit_iso,
-        "file_count": n_files,
-        "total_lines_approx": total_lines,
-        "largest_file": str(largest.relative_to(repo_dir)) if largest else None,
-        "largest_file_bytes": largest_size if largest_size >= 0 else None,
-    }
-    (site / "inventory.json").write_text(json.dumps(inv, indent=2), encoding="utf-8")
 
-    # HTML
     snap_section = ""
     if snap:
         snap_section = f"""
@@ -87,8 +84,33 @@ def main():
     <p>Total seen upstream: <b>{snap.get('total_seen')}</b> • Snapshot size: <b>{snap.get('snapshot_size')}</b></p>
     <p>Time range: <code>{(snap.get('time_range') or {}).get('min')}</code> → <code>{(snap.get('time_range') or {}).get('max')}</code></p>
     <p>Download: <a href="snapshot.json?v={CACHE_BUST}">snapshot.json</a></p>
-  </div>
-        """.strip()
+  </div>"""
+
+    nlp_section = ""
+    if nlp:
+        d = nlp.get("sentiment", {}).get("distribution_percent", {})
+        vp, p, neu, n, vn = (d.get("very_positive",0), d.get("positive",0),
+                             d.get("neutral",0), d.get("negative",0), d.get("very_negative",0))
+        rising = nlp.get("topics", {}).get("rising_terms", [])[:8]
+        ever = nlp.get("topics", {}).get("evergreen_terms", [])[:8]
+        rising_html = " ".join(f"<code>{r['term']}</code>" for r in rising) or "n/a"
+        ever_html = " ".join(f"<code>{r['term']}</code>" for r in ever) or "n/a"
+        nlp_section = f"""
+  <div class="card">
+    <h3>Sentiment & topics (recent window)</h3>
+    <p>Distribution: 😀 {vp}% • 🙂 {p}% • 😐 {neu}% • ☹️ {n}% • 😠 {vn}%</p>
+    <p>Rising terms: {rising_html}</p>
+    <p>Evergreen topics: {ever_html}</p>
+    <p>Full NLP JSON: <a href="nlp.json?v={CACHE_BUST}">nlp.json</a></p>
+  </div>"""
+
+    trends_section = ""
+    if trends:
+        trends_section = f"""
+  <div class="card">
+    <h3>Trends (30d summary)</h3>
+    <p><a href="trends.json?v={CACHE_BUST}">trends.json</a></p>
+  </div>"""
 
     html = f"""<!doctype html>
 <html>
@@ -119,10 +141,11 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
     <p>Raw inventory JSON: <a href="inventory.json?v={CACHE_BUST}">inventory.json</a></p>
   </div>
 
-    <p>Trends (30d): <a href="trends.json?v={CACHE_BUST}">trends.json</a></p>
+  {snap_section}
+  {nlp_section}
+  {trends_section}
 
-  {snap_section or ""}
-  <p>Next in the waterfall: define the precise schema and add Parquet outputs.</p>
+  <p>Next in the waterfall: richer NLP (entities), topic graphs, and a dashboard UI.</p>
   <footer><small>© 2025</small></footer>
 </body>
 </html>"""
