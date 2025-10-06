@@ -19,7 +19,8 @@ jobs:
       TRUTH_REPO: https://github.com/stiles/trump-truth-social-archive.git
       CACHE_BUST: ${{ github.sha }}
       SNAP_MAX: "200"
-      NLTK_DATA: ${{ runner.temp }}/nltk_data
+      # Use a safe workspace-local dir (exists after we mkdir)
+      NLTK_DATA: ${{ github.workspace }}/.nltk_data
     steps:
       - uses: actions/checkout@v4
 
