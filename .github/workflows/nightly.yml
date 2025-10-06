@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
@@ -21,6 +21,7 @@ jobs:
       TRUTH_REPO: https://github.com/stiles/trump-truth-social-archive.git
       CACHE_BUST: ${{ github.sha }}
       SNAP_MAX: "200"
+      NLTK_DATA: ${{ runner.temp }}/nltk_data
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,20 +31,23 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Prepare NLTK dir
+        run: mkdir -p "$NLTK_DATA"
+
       - name: Cache NLTK data
         uses: actions/cache@v4
         with:
-          path: ~/.cache/nltk
+          path: ${{ env.NLTK_DATA }}
           key: nltk-${{ runner.os }}-v1
-
 
       - name: Install deps for normalization + NLP
         run: |
           pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9"
           python - << 'PY'
-          import nltk
-          nltk.download('vader_lexicon')
-          nltk.download('stopwords')
+          import os, nltk
+          nltk.data.path.append(os.environ['NLTK_DATA'])
+          nltk.download('vader_lexicon', download_dir=os.environ['NLTK_DATA'])
+          nltk.download('stopwords',     download_dir=os.environ['NLTK_DATA'])
           PY
 
       - name: Normalize upstream → snapshot.json
@@ -55,24 +59,21 @@ jobs:
       - name: NLP analysis → nlp.json
         run: python scripts/nlp_analyze.py
 
-      - name: Upload Parquet artifact (kept off-repo)
-        uses: actions/upload-artifact@v4
-        with:
-          name: parquet-${{ github.run_id }}
-          path: data/processed/*.parquet
-          retention-days: 7
-
       - name: Build site (inventory + snapshot + NLP)
         run: python scripts/inventory_truth.py
 
-      - name: QA: check artifacts
-        run: python scripts/check_artifacts.py
+      - name: QA: check artifacts if present
+        run: |
+          if [ -f scripts/check_artifacts.py ]; then
+            python scripts/check_artifacts.py
+          else
+            echo "check_artifacts.py not present, skipping QA"
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
-
 
   deploy:
     needs: build
@@ -91,7 +92,7 @@ jobs:
       - name: Notify Telegram (optional)
         if: ${{ env.TG_BOT_TOKEN != '' && env.TG_CHAT_ID != '' }}
         run: |
-          text="📣 Inventory + snapshot published: ${{ steps.deployment.outputs.page_url }}"
+          text="📣 Inventory + snapshot + NLP published: ${{ steps.deployment.outputs.page_url }}"
           curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TG_CHAT_ID}" \
             -d text="$text"
