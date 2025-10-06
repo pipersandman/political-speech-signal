@@ -65,6 +65,9 @@ jobs:
       - name: Build site (inventory + snapshot + NLP)
         run: python scripts/inventory_truth.py
 
+      - name: QA: check artifacts
+        run: python scripts/check_artifacts.py
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
