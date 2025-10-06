@@ -95,14 +95,33 @@ def main():
         ever = nlp.get("topics", {}).get("evergreen_terms", [])[:8]
         rising_html = " ".join(f"<code>{r['term']}</code>" for r in rising) or "n/a"
         ever_html = " ".join(f"<code>{r['term']}</code>" for r in ever) or "n/a"
+
+        def bar(label, pct, color):
+            return f'''
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;margin:4px 0">
+              <div style="color:#555">{label} {pct}%</div>
+              <div style="background:#eee;border-radius:10px;overflow:hidden">
+                <div style="height:10px;width:{pct}%;background:{color}"></div>
+              </div>
+            </div>'''.strip()
+
+        bars = (
+            bar("😀 very positive", vp, "#4caf50") +
+            bar("🙂 positive",       p,  "#8bc34a") +
+            bar("😐 neutral",        neu,"#9e9e9e") +
+            bar("☹️ negative",      n,  "#ff9800") +
+            bar("😠 very negative", vn, "#f44336")
+        )
+
         nlp_section = f"""
   <div class="card">
     <h3>Sentiment & topics (recent window)</h3>
-    <p>Distribution: 😀 {vp}% • 🙂 {p}% • 😐 {neu}% • ☹️ {n}% • 😠 {vn}%</p>
-    <p>Rising terms: {rising_html}</p>
+    {bars}
+    <p style="margin-top:12px">Rising terms: {rising_html}</p>
     <p>Evergreen topics: {ever_html}</p>
     <p>Full NLP JSON: <a href="nlp.json?v={CACHE_BUST}">nlp.json</a></p>
   </div>"""
+
 
     trends_section = ""
     if trends:
