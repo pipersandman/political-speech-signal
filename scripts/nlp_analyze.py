@@ -167,6 +167,13 @@ def main():
     df_recent = df_recent.copy()
     if len(df_recent) and len(rec_scores) == len(df_recent):
         df_recent["_compound"] = rec_scores
+        # Convert timestamps to ISO strings so JSON can serialize them
+        df_recent["created_at"] = (
+            pd.to_datetime(df_recent["created_at"], errors="coerce", utc=True)
+              .dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+              .fillna('')
+        )
+
         most_pos = (
             df_recent.sort_values("_compound", ascending=False)
             .head(3)[["id","created_at","text","url","_compound"]]
@@ -181,6 +188,7 @@ def main():
         most_neu = mid[["id","created_at","text","url","_compound"]].to_dict(orient="records")
     else:
         most_pos = most_neg = most_neu = []
+
 
     out = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
