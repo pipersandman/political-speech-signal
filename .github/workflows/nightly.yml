@@ -2,11 +2,16 @@ name: build-and-deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Run now (ignore Los Angeles time gate)"
+        required: false
+        type: boolean
   schedule:
-    # Noon PT (PDT=19:00 UTC, PST=20:00 UTC)
+    # Noon PT (handles PST/PDT by bracketing UTC)
     - cron: "0 19 * * *"
     - cron: "0 20 * * *"
-    # 10 PM PT (PDT=05:00 UTC next day, PST=06:00 UTC next day)
+    # 10 PM PT (next-day UTC)
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
 
@@ -22,11 +27,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Expose a job-level output so other jobs can see the gate decision
+    outputs:
+      ok: ${{ steps.decide.outputs.ok }}
     env:
       TRUTH_REPO: https://github.com/stiles/trump-truth-social-archive.git
       CACHE_BUST: ${{ github.sha }}
       SNAP_MAX: "200"
-      # use a workspace-local dir for NLTK so caching works cross-runs
       NLTK_DATA: ${{ github.workspace }}/.nltk_data
     steps:
       - uses: actions/checkout@v4
@@ -35,33 +42,39 @@ jobs:
         with:
           python-version: "3.10"
 
-      # Gate: only proceed when local LA hour is 12 or 22 (handles DST)
-      - name: Gate by Los Angeles hour
-        id: tzcheck
+      - name: Decide if we should run (LA time or forced)
+        id: decide
         env:
           TZ: America/Los_Angeles
+          FORCE_RUN: ${{ github.event.inputs.force }}
         run: |
+          if [ "${FORCE_RUN}" = "true" ]; then
+            echo "Force run requested via workflow_dispatch."
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           now_hour=$(date +%H)
           echo "Local hour (America/Los_Angeles): $now_hour"
           if [ "$now_hour" = "12" ] || [ "$now_hour" = "22" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Outside scheduled LA hours; build steps will be skipped."
           fi
 
       - name: Prepare NLTK dir
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         run: mkdir -p "$NLTK_DATA"
 
       - name: Cache NLTK data
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         uses: actions/cache@v4
         with:
           path: ${{ env.NLTK_DATA }}
           key: nltk-${{ runner.os }}-v1
 
       - name: Install deps
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         run: |
           pip install "pandas>=2.2" "pyarrow>=16" "duckdb>=1.0" "nltk>=3.9"
           python - << 'PY'
@@ -72,33 +85,35 @@ jobs:
           PY
 
       - name: Normalize → snapshot.json
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/normalize_truth.py
 
       - name: Normalize to Parquet (+ trends)
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/normalize_to_parquet.py
 
       - name: NLP analysis → nlp.json
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/nlp_analyze.py
 
       - name: Build site (inventory + snapshot + NLP)
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         run: python scripts/inventory_truth.py
 
       - name: Upload Pages artifact
-        if: ${{ steps.tzcheck.outputs.ok == 'true' }}
+        if: ${{ steps.decide.outputs.ok == 'true' }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
   deploy:
     needs: build
-    if: ${{ needs.build.result == 'success' }}
+    # Only deploy when the build actually produced the Pages artifact
+    if: ${{ needs.build.outputs.ok == 'true' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     env:
       TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
