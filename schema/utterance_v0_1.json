@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "utterance_v0_1",
+  "type": "object",
+  "properties": {
+    "id":        { "type": "string", "description": "Stable id from source" },
+    "created_at":{ "type": ["string","null"], "description": "ISO-8601 timestamp from source (UTC if available)" },
+    "source":    { "type": "string", "enum": ["truth_social"] },
+    "author":    { "type": ["string","null"] },
+    "text":      { "type": "string" },
+    "url":       { "type": ["string","null"] },
+    "metrics":   {
+      "type": "object",
+      "properties": {
+        "replies": { "type": "integer" },
+        "reposts": { "type": "integer" },
+        "quotes":  { "type": "integer" },
+        "likes":   { "type": "integer" }
+      },
+      "required": ["replies","reposts","quotes","likes"]
+    }
+  },
+  "required": ["id","text","source","metrics"]
+}
