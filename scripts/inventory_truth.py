@@ -247,6 +247,7 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
   {snap_section}
   {nlp_section}
   {entities_section}
+  {rhetoric_section}
   {trends_section}
 
   <p>Next in the waterfall: baseline deltas and auto-explanations.</p>
