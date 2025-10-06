@@ -56,13 +56,17 @@ def main():
         if sz > largest_size:
             largest_size, largest = sz, p
 
-    # Load snapshot/trends/NLP if present
+    # Load snapshot / NLP / trends / entities if present
     snap = None
     nlp = None
     trends = None
+    ents = None
+
     s_path = site / "snapshot.json"
     n_path = site / "nlp.json"
     t_path = site / "trends.json"
+    e_path = site / "entities.json"
+
     if s_path.exists():
         try: snap = json.loads(s_path.read_text(encoding="utf-8"))
         except Exception: pass
@@ -72,16 +76,25 @@ def main():
     if t_path.exists():
         try: trends = json.loads(t_path.read_text(encoding="utf-8"))
         except Exception: pass
-                ents = None
-    e_path = site / "entities.json"
     if e_path.exists():
         try: ents = json.loads(e_path.read_text(encoding="utf-8"))
         except Exception: pass
 
-
-    # HTML bits
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    # Write inventory.json (the page links to this)
+    inv = {
+        "source_repo": TRUTH_REPO,
+        "generated_at_utc": now,
+        "latest_upstream_commit": latest_commit_iso,
+        "file_count": n_files,
+        "total_lines_approx": total_lines,
+        "largest_file": str(largest.relative_to(repo_dir)) if largest else None,
+        "largest_file_bytes": largest_size if largest_size >= 0 else None,
+    }
+    (site / "inventory.json").write_text(json.dumps(inv, indent=2), encoding="utf-8")
+
+    # HTML sections
     snap_section = ""
     if snap:
         snap_section = f"""
@@ -136,8 +149,12 @@ def main():
             for it in items[:10]:
                 s = it.get("avg_sentiment", 0)
                 tone = "🙂" if s >= 0.2 else ("😐" if s > -0.2 else "☹️")
-                parts.append(f"<span style='display:inline-block;background:#f6f8fa;border:1px solid #eee;border-radius:12px;padding:2px 8px;margin:2px 4px'>{tone} {it['entity']} <small>×{it['count']}, {s:+.2f}</small></span>")
-            return " ".join(parts)
+                parts.append(
+                    f"<span style='display:inline-block;background:#f6f8fa;border:1px solid #eee;border-radius:12px;"
+                    f"padding:2px 8px;margin:2px 4px'>{tone} {it['entity']} "
+                    f"<small>×{it['count']}, {s:+.2f}</small></span>"
+                )
+            return ' '.join(parts)
 
         entities_section = f"""
   <div class="card">
@@ -149,7 +166,6 @@ def main():
     <p>Full entities JSON: <a href="entities.json?v={CACHE_BUST}">entities.json</a></p>
   </div>"""
 
-    
     trends_section = ""
     if trends:
         trends_section = f"""
@@ -189,9 +205,10 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
 
   {snap_section}
   {nlp_section}
+  {entities_section}
   {trends_section}
 
-  <p>Next in the waterfall: richer NLP (entities), topic graphs, and a dashboard UI.</p>
+  <p>Next in the waterfall: baseline deltas and auto-explanations.</p>
   <footer><small>© 2025</small></footer>
 </body>
 </html>"""
