@@ -3,63 +3,21 @@
   "title": "RhetoricLabel",
   "type": "object",
   "properties": {
-    "derogatory_name_calling": {
-      "type": "boolean"
-    },
-    "violent_rhetoric": {
-      "type": "boolean"
-    },
-    "angry_rhetoric": {
-      "type": "boolean"
-    },
-    "positive_rhetoric": {
-      "type": "boolean"
-    },
-    "dehumanization": {
-      "type": "boolean"
-    },
-    "hyperbole": {
-      "type": "boolean"
-    },
-    "divisive_labeling": {
-      "type": "boolean"
-    },
-    "call_for_unity": {
-      "type": "boolean"
-    },
-    "call_for_legal_action": {
-      "type": "boolean"
-    },
-    "targets_negative": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "targets_positive": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "who_is_praised": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "who_is_criticized": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "legal_action_details": {
-      "type": "string"
-    },
-    "why": {
-      "type": "string"
-    }
+    "derogatory_name_calling": { "type": "boolean" },
+    "violent_rhetoric": { "type": "boolean" },
+    "angry_rhetoric": { "type": "boolean" },
+    "positive_rhetoric": { "type": "boolean" },
+    "dehumanization": { "type": "boolean" },
+    "hyperbole": { "type": "boolean" },
+    "divisive_labeling": { "type": "boolean" },
+    "call_for_unity": { "type": "boolean" },
+    "call_for_legal_action": { "type": "boolean" },
+    "targets_negative": { "type": "array", "items": { "type": "string" } },
+    "targets_positive": { "type": "array", "items": { "type": "string" } },
+    "who_is_praised": { "type": "array", "items": { "type": "string" } },
+    "who_is_criticized": { "type": "array", "items": { "type": "string" } },
+    "legal_action_details": { "type": "string" },
+    "why": { "type": "string" }
   },
   "required": [
     "derogatory_name_calling",
