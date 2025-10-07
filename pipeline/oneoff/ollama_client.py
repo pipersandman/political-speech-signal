@@ -1,15 +1,29 @@
 import requests
 import json
+from typing import Dict, Any, Optional
 
-def chat_ollama(model: str, system: str, user: str, url: str = "http://localhost:11434/api/chat") -> str:
+DEFAULT_OLLAMA_URL = "http://localhost:11434/api/chat"
+
+def chat_ollama(
+    model: str,
+    system: str,
+    user: str,
+    url: str = DEFAULT_OLLAMA_URL,
+    options: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    One-shot chat call to Ollama with speed-friendly defaults.
+    You can pass options like:
+      {"temperature": 0, "num_ctx": 1024, "num_batch": 512}
+    """
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": user}
+            {"role": "user", "content": user},
         ],
         "stream": False,
-        "options": {"temperature": 0}
+        "options": options or {"temperature": 0},
     }
     resp = requests.post(url, json=payload, timeout=600)
     resp.raise_for_status()
