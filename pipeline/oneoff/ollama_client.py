@@ -9,7 +9,6 @@ def chat_ollama(model: str, system: str, user: str, url: str = "http://localhost
             {"role": "user", "content": user}
         ],
         "stream": False,
-        # Encourage strict JSON
         "options": {"temperature": 0}
     }
     resp = requests.post(url, json=payload, timeout=600)
