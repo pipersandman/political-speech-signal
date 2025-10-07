@@ -1,0 +1,8 @@
+pandas>=2.2
+numpy>=1.26
+tqdm>=4.66
+pydantic>=2.8
+tenacity>=8.5
+transformers>=4.44
+torch
+requests>=2.32
