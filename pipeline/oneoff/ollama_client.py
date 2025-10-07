@@ -1,5 +1,4 @@
 import requests
-import json
 from typing import Dict, Any, Optional
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -11,11 +10,6 @@ def chat_ollama(
     url: str = DEFAULT_OLLAMA_URL,
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """
-    One-shot chat call to Ollama with speed-friendly defaults.
-    You can pass options like:
-      {"temperature": 0, "num_ctx": 1024, "num_batch": 512}
-    """
     payload = {
         "model": model,
         "messages": [
