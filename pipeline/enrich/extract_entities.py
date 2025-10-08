@@ -111,6 +111,18 @@ def main():
             f"or pip install the wheel directly."
         )
 
+# ---- FORCE GPU HERE (immediately after nlp is loaded) ----
+if torch is not None and torch.cuda.is_available():
+    try:
+        # ensure spaCy/Thinc uses GPU where applicable, and move the pipeline to CUDA
+        spacy.require_gpu()
+        nlp.to("cuda")
+        print(f"[enrich] Model moved to GPU: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+    except Exception as e:
+        print(f"[enrich] WARNING: failed to move model to GPU; falling back to CPU: {e}")
+else:
+    print("[enrich] GPU not available; running on CPU.")
+
     texts = df["text"].fillna("").astype(str).tolist()
     print(f"[enrich] NER over {len(texts)} posts … (batch_size={args.batch_size})")
 
