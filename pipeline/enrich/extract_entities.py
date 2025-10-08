@@ -1,13 +1,21 @@
 # pipeline/enrich/extract_entities.py
 """
-NER enrichment with progress bar, optional --head to test on a subset, and GPU acceleration.
+NER enrichment with progress bar and GPU acceleration.
 Writes post_labels_enriched.csv next to the input CSV by default.
+
+Strategy:
+- Load posts with pandas.
+- Try to move spaCy transformer to CUDA.
+- If that fails, fall back to HuggingFace Transformers NER pipeline on GPU.
+- Bucket simple targets (media/courts/opponents) from entities + text.
 """
 
 import os
 import re
 import json
 import argparse
+from typing import List, Dict, Any
+
 import pandas as pd
 import spacy
 
@@ -17,6 +25,8 @@ except Exception:
     torch = None
 
 from tqdm import tqdm
+
+# ------------------ heuristics for bucketing ------------------
 
 MEDIA_KEYWORDS = {
     "cnn","fox","fox news","msnbc","nbc","abc","cbs","nytimes","new york times","washington post",
@@ -49,14 +59,14 @@ def load_df(csv_path: str) -> pd.DataFrame:
     df = df.dropna(subset=["created_at"]).sort_values("created_at")
     return df
 
-def bucket_targets(raw_entities: list, raw_text: str) -> dict:
+def bucket_targets(raw_entities: List[Dict[str, Any]], raw_text: str) -> Dict[str, Any]:
     text_norm = normalize_text(raw_text)
     media_hit = any(k in text_norm for k in MEDIA_KEYWORDS)
     court_hit = any(k in text_norm for k in COURT_KEYWORDS)
     opponents = set()
     for ent in raw_entities:
-        t = normalize_text(ent["text"])
-        if ent["label"] in {"PERSON","ORG","GPE"}:
+        t = normalize_text(ent.get("text", ""))
+        if ent.get("label") in {"PERSON","ORG","GPE","LOC"}:
             if t in OPPONENT_BUCKET:
                 opponents.add(t)
             if any(tok in t for tok in ["democrat","democrats","the left","liberal","radical left","biden","harris"]):
@@ -68,31 +78,27 @@ def bucket_targets(raw_entities: list, raw_text: str) -> dict:
         "opponents_list": sorted(opponents),
     }
 
-def move_transformer_to_cuda(nlp):
-    """
-    Move ONLY the transformer component to CUDA (no CuPy required).
-    Works for both 'transformer' and 'curated_transformer' pipes, across spaCy versions.
-    """
+# ------------------ spaCy GPU handling ------------------
+
+def move_transformer_to_cuda(nlp) -> bool:
+    """Move ONLY the transformer to CUDA (no CuPy required)."""
     if torch is None or not torch.cuda.is_available():
         print("[enrich] GPU not available; running on CPU.")
         return False
-
-    # Pick the transformer pipe
     try:
-        trf = nlp.get_pipe("transformer")
-    except KeyError:
         try:
-            trf = nlp.get_pipe("curated_transformer")
+            trf = nlp.get_pipe("transformer")
         except KeyError:
-            print("[enrich] WARNING: No transformer pipe found; running CPU.")
-            return False
+            trf = nlp.get_pipe("curated_transformer")
+    except Exception:
+        print("[enrich] WARNING: No transformer pipe found in spaCy pipeline.")
+        return False
 
-    # Try common attributes that hold the torch module
     for obj in (
         getattr(trf, "model", None),
         getattr(trf, "torch", None),
         getattr(trf, "_model", None),
-        trf,  # last resort if the pipe itself exposes .to()
+        trf,
     ):
         if obj is not None and hasattr(obj, "to"):
             try:
@@ -101,9 +107,43 @@ def move_transformer_to_cuda(nlp):
                 return True
             except Exception as e:
                 print(f"[enrich] WARNING: attempt to move transformer to CUDA failed on {type(obj)}: {e}")
-
     print("[enrich] WARNING: could not locate a CUDA-movable module in transformer; running CPU.")
     return False
+
+# ------------------ HF NER fallback ------------------
+
+def run_hf_ner_gpu(texts: List[str], batch_size: int = 128, model_name: str = "dslim/bert-large-NER"):
+    """
+    Use HuggingFace transformers token-classification pipeline on GPU (device=0).
+    Returns: list of list[{'text','label'}] aligned to input texts.
+    """
+    from transformers import pipeline as hf_pipeline
+    if torch is None or not torch.cuda.is_available():
+        device = -1
+        print("[enrich] HF pipeline running on CPU (no CUDA available).")
+    else:
+        device = 0
+        print(f"[enrich] HF pipeline on CUDA device 0: {torch.cuda.get_device_name(0)}")
+
+    ner = hf_pipeline(
+        "token-classification",
+        model=model_name,
+        aggregation_strategy="simple",
+        device=device,
+    )
+
+    results = []
+    # process in chunks to control memory
+    for i in tqdm(range(0, len(texts), batch_size), desc="HF-NER", total=(len(texts)+batch_size-1)//batch_size):
+        chunk = texts[i:i+batch_size]
+        out = ner(chunk)
+        # Normalize to [{"text":..., "label":...}, ...]
+        for ents in out:
+            ents_norm = [{"text": e.get("word") or e.get("entity_group") or "", "label": (e.get("entity_group") or e.get("entity") or "")} for e in ents]
+            results.append(ents_norm)
+    return results
+
+# ------------------ main ------------------
 
 def main():
     ap = argparse.ArgumentParser()
@@ -116,14 +156,16 @@ def main():
     ap.add_argument("--head", type=int, default=0,
                     help="If >0, only process the first N posts (for quick tests)")
     ap.add_argument("--batch_size", type=int, default=96,
-                    help="spaCy pipe batch size (increase if you have GPU memory)")
+                    help="spaCy pipe batch size / HF chunk size")
+    ap.add_argument("--hf_model", default="dslim/bert-large-NER",
+                    help="HF model to use in fallback, e.g. dslim/bert-large-NER")
     args = ap.parse_args()
 
     df = load_df(args.csv)
     if args.head and args.head > 0:
         df = df.head(args.head).copy()
 
-    # Informational prints
+    # Info prints
     if torch is not None:
         try:
             print(f"[enrich] torch.cuda.is_available(): {torch.cuda.is_available()}")
@@ -142,28 +184,39 @@ def main():
             f"or pip install the wheel directly."
         )
 
-    # >>> Move only the transformer to CUDA (no CuPy needed)
-    moved = move_transformer_to_cuda(nlp)
-    if not moved:
-        print("[enrich] Proceeding on CPU for transformer.")
-
     texts = df["text"].fillna("").astype(str).tolist()
-    print(f"[enrich] NER over {len(texts)} posts … (batch_size={args.batch_size})")
+    print(f"[enrich] NER over {len(texts)} posts …")
 
     raw_json = []
     media_flags, court_flags, opp_flags, opp_lists = [], [], [], []
 
-    for i, doc in enumerate(tqdm(nlp.pipe(texts, batch_size=args.batch_size), total=len(texts), desc="NER")):
-        ents = [{"text": ent.text, "label": ent.label_} for ent in doc.ents]
-        raw_json.append(json.dumps(ents, ensure_ascii=False))
-        buckets = bucket_targets(ents, texts[i])
-        media_flags.append(buckets["media_targeted"])
-        court_flags.append(buckets["court_targeted"])
-        opp_flags.append(buckets["opponents_targeted"])
-        opp_lists.append(", ".join(buckets["opponents_list"]))
+    # Try spaCy-on-GPU, else HF-on-GPU
+    used_spacy = move_transformer_to_cuda(nlp)
 
-        if (i + 1) % 1000 == 0:
-            print(f"[enrich] processed {i+1}/{len(texts)}")
+    if used_spacy:
+        print(f"[enrich] Using spaCy pipeline (batch_size={args.batch_size})")
+        for i, doc in enumerate(tqdm(nlp.pipe(texts, batch_size=args.batch_size), total=len(texts), desc="NER")):
+            ents = [{"text": ent.text, "label": ent.label_} for ent in doc.ents]
+            raw_json.append(json.dumps(ents, ensure_ascii=False))
+            buckets = bucket_targets(ents, texts[i])
+            media_flags.append(buckets["media_targeted"])
+            court_flags.append(buckets["court_targeted"])
+            opp_flags.append(buckets["opponents_targeted"])
+            opp_lists.append(", ".join(buckets["opponents_list"]))
+            if (i + 1) % 1000 == 0:
+                print(f"[enrich] processed {i+1}/{len(texts)}")
+    else:
+        print(f"[enrich] Falling back to HF pipeline '{args.hf_model}' on GPU (batch_size={max(32, args.batch_size)})")
+        hf_ents = run_hf_ner_gpu(texts, batch_size=max(32, args.batch_size), model_name=args.hf_model)
+        for i, ents in enumerate(tqdm(hf_ents, desc="Bucket", total=len(hf_ents))):
+            raw_json.append(json.dumps(ents, ensure_ascii=False))
+            buckets = bucket_targets(ents, texts[i])
+            media_flags.append(buckets["media_targeted"])
+            court_flags.append(buckets["court_targeted"])
+            opp_flags.append(buckets["opponents_targeted"])
+            opp_lists.append(", ".join(buckets["opponents_list"]))
+            if (i + 1) % 1000 == 0:
+                print(f"[enrich] processed {i+1}/{len(texts)}")
 
     df["ner_entities"] = raw_json
     df["attacks_media"] = media_flags
