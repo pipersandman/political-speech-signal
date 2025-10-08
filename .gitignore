@@ -238,3 +238,11 @@ build/
 .DS_Store
 .vscode/
 
+
+# allow one-off outputs
+!pipeline/oneoff/
+!pipeline/oneoff/out/
+!pipeline/oneoff/out/post_labels.csv
+!pipeline/oneoff/out/partial_results.jsonl
+!pipeline/oneoff/out/oneoff_report.json
+!pipeline/oneoff/out/report.md
