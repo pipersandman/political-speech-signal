@@ -198,4 +198,4 @@ if not pos_targets.empty:
 # ---------- drilldown table ----------
 st.subheader("Browse posts")
 show_cols = ["created_at","text"] + CATS + ["tone_index"]
-st.dataframe(df[show_cols].sort_values("created_at", ascending=False), use_container_width=True)
+st.dataframe(df[show_cols].sort_values("created_at", ascending=False), width="stretch")
