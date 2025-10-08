@@ -1,6 +1,6 @@
 # pipeline/enrich/extract_entities.py
 """
-NER enrichment with progress bar, GPU preference, and optional --head to test on a subset.
+NER enrichment with progress bar, optional --head to test on a subset, and GPU acceleration.
 Writes post_labels_enriched.csv next to the input CSV by default.
 """
 
@@ -9,7 +9,6 @@ import re
 import json
 import argparse
 import pandas as pd
-
 import spacy
 
 try:
@@ -69,6 +68,43 @@ def bucket_targets(raw_entities: list, raw_text: str) -> dict:
         "opponents_list": sorted(opponents),
     }
 
+def move_transformer_to_cuda(nlp):
+    """
+    Move ONLY the transformer component to CUDA (no CuPy required).
+    Works for both 'transformer' and 'curated_transformer' pipes, across spaCy versions.
+    """
+    if torch is None or not torch.cuda.is_available():
+        print("[enrich] GPU not available; running on CPU.")
+        return False
+
+    # Pick the transformer pipe
+    try:
+        trf = nlp.get_pipe("transformer")
+    except KeyError:
+        try:
+            trf = nlp.get_pipe("curated_transformer")
+        except KeyError:
+            print("[enrich] WARNING: No transformer pipe found; running CPU.")
+            return False
+
+    # Try common attributes that hold the torch module
+    for obj in (
+        getattr(trf, "model", None),
+        getattr(trf, "torch", None),
+        getattr(trf, "_model", None),
+        trf,  # last resort if the pipe itself exposes .to()
+    ):
+        if obj is not None and hasattr(obj, "to"):
+            try:
+                obj.to("cuda")
+                print(f"[enrich] Transformer moved to GPU: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+                return True
+            except Exception as e:
+                print(f"[enrich] WARNING: attempt to move transformer to CUDA failed on {type(obj)}: {e}")
+
+    print("[enrich] WARNING: could not locate a CUDA-movable module in transformer; running CPU.")
+    return False
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default="pipeline/oneoff/out/post_labels.csv",
@@ -87,12 +123,7 @@ def main():
     if args.head and args.head > 0:
         df = df.head(args.head).copy()
 
-    # Prefer GPU if available
-    if spacy.prefer_gpu():
-        print("[enrich] Using GPU via spaCy prefer_gpu().")
-    else:
-        print("[enrich] GPU not available to spaCy; running on CPU.")
-
+    # Informational prints
     if torch is not None:
         try:
             print(f"[enrich] torch.cuda.is_available(): {torch.cuda.is_available()}")
@@ -111,17 +142,10 @@ def main():
             f"or pip install the wheel directly."
         )
 
-# ---- FORCE GPU HERE (immediately after nlp is loaded) ----
-if torch is not None and torch.cuda.is_available():
-    try:
-        # ensure spaCy/Thinc uses GPU where applicable, and move the pipeline to CUDA
-        spacy.require_gpu()
-        nlp.to("cuda")
-        print(f"[enrich] Model moved to GPU: {torch.cuda.get_device_name(torch.cuda.current_device())}")
-    except Exception as e:
-        print(f"[enrich] WARNING: failed to move model to GPU; falling back to CPU: {e}")
-else:
-    print("[enrich] GPU not available; running on CPU.")
+    # >>> Move only the transformer to CUDA (no CuPy needed)
+    moved = move_transformer_to_cuda(nlp)
+    if not moved:
+        print("[enrich] Proceeding on CPU for transformer.")
 
     texts = df["text"].fillna("").astype(str).tolist()
     print(f"[enrich] NER over {len(texts)} posts … (batch_size={args.batch_size})")
@@ -129,7 +153,6 @@ else:
     raw_json = []
     media_flags, court_flags, opp_flags, opp_lists = [], [], [], []
 
-    # Use nlp.pipe with tqdm progress bar
     for i, doc in enumerate(tqdm(nlp.pipe(texts, batch_size=args.batch_size), total=len(texts), desc="NER")):
         ents = [{"text": ent.text, "label": ent.label_} for ent in doc.ents]
         raw_json.append(json.dumps(ents, ensure_ascii=False))
@@ -139,7 +162,6 @@ else:
         opp_flags.append(buckets["opponents_targeted"])
         opp_lists.append(", ".join(buckets["opponents_list"]))
 
-        # Optional heartbeat every 1000 posts
         if (i + 1) % 1000 == 0:
             print(f"[enrich] processed {i+1}/{len(texts)}")
 
