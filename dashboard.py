@@ -94,7 +94,66 @@ fig_ts = px.line(
     labels={"value":"Proportion of posts", "variable":"Rhetoric"},
     title="Rhetoric over time",
 )
-st.plotly_chart(fig_ts, use_container_width=True)
+st.plotly_chart(fig_ts, width="stretch")
+
+
+# ---------- monthly rollups ----------
+st.subheader("Monthly Rhetoric Trends")
+
+# Group data by month
+monthly = (
+    df.groupby(pd.Grouper(key="created_at", freq="ME"))[
+        ["angry_rhetoric","violent_rhetoric","positive_rhetoric","call_for_unity"]
+    ]
+    .mean()
+    .reset_index()
+)
+
+# Create line chart of monthly averages
+fig_month = px.line(
+    monthly,
+    x="created_at",
+    y=["angry_rhetoric","violent_rhetoric","positive_rhetoric","call_for_unity"],
+    labels={"value":"Proportion of posts", "variable":"Rhetoric Type"},
+    title="Monthly Averages of Rhetoric Types",
+)
+st.plotly_chart(fig_month, width="stretch")
+
+# ---------- event annotations ----------
+st.subheader("Key Events Overlay")
+
+# Define events you want to mark (edit these as you like)
+events = [
+    {"date": "2025-01-20", "event": "Inauguration Day"},
+    {"date": "2025-03-15", "event": "Midterm Announcement"},
+    {"date": "2025-04-15", "event": "Tax Day / Economic Rally"},
+    {"date": "2025-06-27", "event": "Presidential Debate"},
+    {"date": "2025-08-15", "event": "Court Ruling / DOJ Decision"},
+]
+
+fig_month_events = px.line(
+    monthly,
+    x="created_at",
+    y=["angry_rhetoric","violent_rhetoric","positive_rhetoric","call_for_unity"],
+    labels={"value":"Proportion of posts", "variable":"Rhetoric Type"},
+    title="Rhetoric vs. Key Political Events",
+)
+
+# Add dotted lines and labels for each event
+for e in events:
+    fig_month_events.add_vline(x=e["date"], line_dash="dot", line_color="gray")
+    fig_month_events.add_annotation(
+        x=e["date"],
+        y=1,
+        text=e["event"],
+        showarrow=False,
+        yanchor="bottom",
+        font=dict(size=10),
+        textangle=-90,
+    )
+
+st.plotly_chart(fig_month_events, width="stretch")
+
 
 # ---------- tone balance index ----------
 df["tone_index"] = (df["positive_rhetoric"] + df["call_for_unity"]) - (
@@ -102,7 +161,7 @@ df["tone_index"] = (df["positive_rhetoric"] + df["call_for_unity"]) - (
 )
 ti = df.groupby("date")["tone_index"].mean().reset_index()
 fig_ti = px.line(ti, x="date", y="tone_index", title="Tone Balance Index (Positive vs Aggressive)")
-st.plotly_chart(fig_ti, use_container_width=True)
+st.plotly_chart(fig_ti, width="stretch")
 
 # ---------- targets (simple heuristic from text columns if present) ----------
 # We'll expand later with entity extraction; for now try 'who_is_praised'/'who_is_criticized' lists if present.
@@ -128,13 +187,13 @@ if not neg_targets.empty:
     top_neg = neg_targets.value_counts().head(12).reset_index(names=["target","mentions"])
     fig_neg = px.bar(top_neg, x="mentions", y="target", orientation="h",
                      title="Most criticized targets", labels={"mentions":"Mentions","target":"Target"})
-    st.plotly_chart(fig_neg, use_container_width=True)
+    st.plotly_chart(fig_neg, width="stretch")
 
 if not pos_targets.empty:
     top_pos = pos_targets.value_counts().head(12).reset_index(names=["target","mentions"])
     fig_pos = px.bar(top_pos, x="mentions", y="target", orientation="h",
                      title="Most praised targets", labels={"mentions":"Mentions","target":"Target"})
-    st.plotly_chart(fig_pos, use_container_width=True)
+    st.plotly_chart(fig_pos, width="stretch")
 
 # ---------- drilldown table ----------
 st.subheader("Browse posts")
